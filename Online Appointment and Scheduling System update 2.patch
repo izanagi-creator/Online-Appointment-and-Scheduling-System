@@ -1,0 +1,65 @@
+From 99a1957e32b0ec4b04fcaaf670218cf993c42c5c Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Tue, 10 Nov 2026 15:36:36 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 2
+
+---
+ server/time.js      | 10 ++++++++++
+ server/time.test.js | 27 +++++++++++++++++++++++++++
+ 2 files changed, 37 insertions(+)
+ create mode 100644 server/time.test.js
+
+diff --git a/server/time.js b/server/time.js
+index b5a0cb5..0169063 100644
+--- a/server/time.js
++++ b/server/time.js
+@@ -20,3 +20,13 @@ export function parseTime(text) {
+ export function formatTime(minutes) {
+   return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0')
+ }
++
++// ---- scheduling rules ----
++export const WORK_START = 8 * 60  // 08:00
++export const WORK_END = 18 * 60   // 18:00
++export const STEP = 15            // start times are multiples of 15 minutes
++export const DURATIONS = [15, 30, 45, 60, 90, 120]
++
++// Two appointments overlap if each one starts before the other one ends.
++// Back-to-back (one ends at 10:00, next starts at 10:00) is allowed.
++export const overlaps = (aStart, aDur, bStart, bDur) => aStart < bStart + bDur && bStart < aStart + aDur
+diff --git a/server/time.test.js b/server/time.test.js
+new file mode 100644
+index 0000000..7c890c4
+--- /dev/null
++++ b/server/time.test.js
+@@ -0,0 +1,27 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { parseDate, parseTime, formatTime, overlaps } from './time.js'
++
++test('parseDate accepts real dates only', () => {
++  assert.equal(parseDate('2026-11-10'), '2026-11-10')
++  assert.equal(parseDate('2026-02-30'), null)
++  assert.equal(parseDate('2026-13-01'), null)
++  assert.equal(parseDate('10/11/2026'), null)
++  assert.equal(parseDate(undefined), null)
++})
++
++test('parseTime and formatTime round-trip', () => {
++  assert.equal(parseTime('09:30'), 570)
++  assert.equal(formatTime(570), '09:30')
++  assert.equal(parseTime('24:00'), null)
++  assert.equal(parseTime('9:30'), null)
++  assert.equal(parseTime('12:60'), null)
++})
++
++test('overlap rules', () => {
++  assert.ok(overlaps(540, 60, 570, 30))   // 09:00-10:00 vs 09:30-10:00
++  assert.ok(overlaps(540, 60, 540, 60))   // identical
++  assert.ok(overlaps(570, 30, 540, 120))  // one inside the other
++  assert.ok(!overlaps(540, 30, 570, 30))  // back to back is fine
++  assert.ok(!overlaps(600, 30, 540, 30))  // far apart
++})
+-- 
+2.43.0
+

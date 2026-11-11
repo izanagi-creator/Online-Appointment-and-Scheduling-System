@@ -1,0 +1,41 @@
+From 29174ec2cc4302b043e1abc91f46d2f5f8558706 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Tue, 10 Nov 2026 15:36:36 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 1
+
+---
+ server/time.js | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+ create mode 100644 server/time.js
+
+diff --git a/server/time.js b/server/time.js
+new file mode 100644
+index 0000000..b5a0cb5
+--- /dev/null
++++ b/server/time.js
+@@ -0,0 +1,22 @@
++// "2026-11-10" -> "2026-11-10" if it is a real calendar date, otherwise null
++export function parseDate(text) {
++  if (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return null
++  const [y, m, d] = text.split('-').map(Number)
++  const dt = new Date(Date.UTC(y, m - 1, d))
++  const real = dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
++  return real ? text : null
++}
++
++// "09:30" -> 570 (minutes since midnight), or null if invalid
++export function parseTime(text) {
++  if (typeof text !== 'string') return null
++  const m = text.match(/^(\d{2}):(\d{2})$/)
++  if (!m) return null
++  const h = Number(m[1]), min = Number(m[2])
++  return h > 23 || min > 59 ? null : h * 60 + min
++}
++
++// 570 -> "09:30"
++export function formatTime(minutes) {
++  return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0')
++}
+-- 
+2.43.0
+
