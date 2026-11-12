@@ -1,0 +1,56 @@
+From 6bf3402359b2856c8b469448bead7c340c450d26 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Tue, 10 Nov 2026 15:36:37 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 5
+
+---
+ server/validate.js | 37 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+ create mode 100644 server/validate.js
+
+diff --git a/server/validate.js b/server/validate.js
+new file mode 100644
+index 0000000..b419d19
+--- /dev/null
++++ b/server/validate.js
+@@ -0,0 +1,37 @@
++import { parseDate, parseTime, formatTime, WORK_START, WORK_END, STEP, DURATIONS } from './time.js'
++import { TYPES, STATUSES } from './db.js'
++
++// Checks the JSON body of POST/PUT. Returns { error } or { value }.
++export function validateAppointment(body) {
++  const b = body && typeof body === 'object' ? body : {}
++
++  const title = String(b.title ?? '').trim()
++  if (!title) return { error: 'Title is required.' }
++  if (title.length > 80) return { error: 'Title must be 80 characters or fewer.' }
++
++  const client = String(b.client ?? '').trim()
++  if (!client) return { error: 'Client name is required.' }
++  if (client.length > 60) return { error: 'Client name must be 60 characters or fewer.' }
++
++  const type = b.type ?? 'Meeting'
++  if (!TYPES.includes(type)) return { error: 'Type must be one of: ' + TYPES.join(', ') + '.' }
++
++  const date = parseDate(b.date)
++  if (!date) return { error: 'Date must be a real date like 2026-11-10.' }
++
++  const startMin = parseTime(b.start)
++  if (startMin === null || startMin % STEP !== 0)
++    return { error: `Start time must be in ${STEP} minute steps, like 09:30.` }
++
++  const duration = Number(b.duration)
++  if (!DURATIONS.includes(duration)) return { error: 'Duration must be one of: ' + DURATIONS.join(', ') + ' minutes.' }
++
++  if (startMin < WORK_START || startMin + duration > WORK_END)
++    return { error: `Appointments must fall between ${formatTime(WORK_START)} and ${formatTime(WORK_END)}.` }
++
++  const status = b.status ?? 'scheduled'
++  if (!STATUSES.includes(status)) return { error: 'Status must be scheduled, completed or cancelled.' }
++
++  const notes = String(b.notes ?? '').trim().slice(0, 200)
++  return { value: { title, client, type, date, startMin, duration, status, notes } }
++}
+-- 
+2.43.0
+

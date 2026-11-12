@@ -1,0 +1,85 @@
+From c950e65a101b2543a865afffdd3f817e6a147547 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Tue, 10 Nov 2026 15:36:37 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 3
+
+---
+ server/auth.js      | 32 ++++++++++++++++++++++++++++++++
+ server/auth.test.js | 26 ++++++++++++++++++++++++++
+ 2 files changed, 58 insertions(+)
+ create mode 100644 server/auth.js
+ create mode 100644 server/auth.test.js
+
+diff --git a/server/auth.js b/server/auth.js
+new file mode 100644
+index 0000000..20b050c
+--- /dev/null
++++ b/server/auth.js
+@@ -0,0 +1,32 @@
++import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto'
++
++// Passwords are never stored. We store "salt:hash" made with scrypt (slow on purpose).
++export function hashPassword(password) {
++  const salt = randomBytes(16).toString('hex')
++  const hash = scryptSync(password, salt, 64).toString('hex')
++  return `${salt}:${hash}`
++}
++
++export function verifyPassword(password, stored) {
++  const [salt, hash] = stored.split(':')
++  const expected = Buffer.from(hash, 'hex')
++  const actual = scryptSync(password, salt, expected.length)
++  return timingSafeEqual(expected, actual)
++}
++
++// The browser keeps the random token in a cookie. The database only keeps its hash.
++export const newToken = () => randomBytes(32).toString('hex')
++export const hashToken = (token) => createHash('sha256').update(token).digest('hex')
++
++// strict = true for registration (enforces the password rules)
++export function validateCredentials(body, strict) {
++  const b = body && typeof body === 'object' ? body : {}
++  const username = String(b.username ?? '').trim()
++  const password = typeof b.password === 'string' ? b.password : ''
++  if (!/^[A-Za-z0-9_.-]{3,30}$/.test(username))
++    return { error: 'Username must be 3 to 30 characters: letters, numbers, dot, dash or underscore.' }
++  if (!password) return { error: 'Password is required.' }
++  if (strict && password.length < 8) return { error: 'Password must be at least 8 characters.' }
++  if (password.length > 100) return { error: 'Password is too long.' }
++  return { value: { username, password } }
++}
+diff --git a/server/auth.test.js b/server/auth.test.js
+new file mode 100644
+index 0000000..5760c0d
+--- /dev/null
++++ b/server/auth.test.js
+@@ -0,0 +1,26 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { hashPassword, verifyPassword, hashToken, newToken, validateCredentials } from './auth.js'
++
++test('password hash verifies only the right password', () => {
++  const stored = hashPassword('correct horse')
++  assert.ok(verifyPassword('correct horse', stored))
++  assert.ok(!verifyPassword('wrong horse', stored))
++  assert.notEqual(stored, hashPassword('correct horse')) // random salt each time
++})
++
++test('tokens are random and hash the same way every time', () => {
++  const t = newToken()
++  assert.equal(t.length, 64)
++  assert.notEqual(t, newToken())
++  assert.equal(hashToken(t), hashToken(t))
++})
++
++test('validateCredentials', () => {
++  assert.ok(validateCredentials({ username: 'maria_01', password: 'longenough' }, true).value)
++  assert.ok(validateCredentials({ username: 'ab', password: 'longenough' }, true).error)
++  assert.ok(validateCredentials({ username: 'maria', password: 'short' }, true).error)
++  assert.ok(validateCredentials({ username: 'maria', password: 'short' }, false).value)
++  assert.ok(validateCredentials({ username: 'bad name!', password: 'longenough' }, true).error)
++  assert.ok(validateCredentials(null, true).error)
++})
+-- 
+2.43.0
+

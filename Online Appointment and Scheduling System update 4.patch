@@ -1,0 +1,139 @@
+From 66c7ef667bd74e94dc4da4bef9a68d4a19b4c4cf Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Tue, 10 Nov 2026 15:36:37 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 4
+
+---
+ server/db.js | 120 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 120 insertions(+)
+ create mode 100644 server/db.js
+
+diff --git a/server/db.js b/server/db.js
+new file mode 100644
+index 0000000..b68b800
+--- /dev/null
++++ b/server/db.js
+@@ -0,0 +1,120 @@
++import { DatabaseSync } from 'node:sqlite'
++import { fileURLToPath } from 'node:url'
++import { formatTime } from './time.js'
++
++const file = process.env.DB_FILE || fileURLToPath(new URL('./data.db', import.meta.url))
++const db = new DatabaseSync(file)
++db.exec('PRAGMA foreign_keys = ON')
++
++db.exec(`
++  CREATE TABLE IF NOT EXISTS users (
++    id            INTEGER PRIMARY KEY AUTOINCREMENT,
++    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
++    password_hash TEXT NOT NULL,
++    created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
++  );
++  CREATE TABLE IF NOT EXISTS sessions (
++    token_hash TEXT PRIMARY KEY,
++    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
++    expires_at INTEGER NOT NULL
++  );
++  CREATE TABLE IF NOT EXISTS appointments (
++    id         INTEGER PRIMARY KEY AUTOINCREMENT,
++    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
++    title      TEXT    NOT NULL,
++    client     TEXT    NOT NULL,
++    type       TEXT    NOT NULL,
++    date       TEXT    NOT NULL,
++    start_min  INTEGER NOT NULL,
++    duration   INTEGER NOT NULL,
++    status     TEXT    NOT NULL DEFAULT 'scheduled',
++    notes      TEXT    NOT NULL DEFAULT '',
++    created_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
++  );
++  CREATE INDEX IF NOT EXISTS idx_appt_user_date ON appointments (user_id, date);
++`)
++
++export const TYPES = ['Consultation', 'Meeting', 'Check-up', 'Class', 'Interview', 'Other']
++export const STATUSES = ['scheduled', 'completed', 'cancelled']
++
++// ---------- users and sessions ----------
++export function createUser(username, passwordHash) {
++  const r = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, passwordHash)
++  return { id: Number(r.lastInsertRowid), username }
++}
++
++export function getUserByUsername(username) {
++  const r = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
++  return r ? { id: Number(r.id), username: r.username, passwordHash: r.password_hash } : null
++}
++
++export function createSession(userId, tokenHash, expiresAt) {
++  db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now()) // tidy old sessions
++  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(tokenHash, userId, expiresAt)
++}
++
++export function getSessionUser(tokenHash) {
++  const r = db.prepare(
++    'SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
++  ).get(tokenHash, Date.now())
++  return r ? { id: Number(r.id), username: r.username } : null
++}
++
++export function deleteSession(tokenHash) {
++  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)
++}
++
++// ---------- appointments ----------
++// Every query filters by user_id, so people only ever see their own appointments.
++const toAppt = (r) => ({
++  id: Number(r.id), title: r.title, client: r.client, type: r.type, date: r.date,
++  startMin: r.start_min, duration: r.duration, endMin: r.start_min + r.duration,
++  start: formatTime(r.start_min), end: formatTime(r.start_min + r.duration),
++  status: r.status, notes: r.notes,
++})
++
++export const listAppointments = (userId) =>
++  db.prepare('SELECT * FROM appointments WHERE user_id = ? ORDER BY date, start_min').all(userId).map(toAppt)
++
++export const appointmentsOnDay = (userId, date) =>
++  db.prepare('SELECT * FROM appointments WHERE user_id = ? AND date = ? ORDER BY start_min').all(userId, date).map(toAppt)
++
++export const getAppointment = (id, userId) => {
++  const r = db.prepare('SELECT * FROM appointments WHERE id = ? AND user_id = ?').get(id, userId)
++  return r ? toAppt(r) : null
++}
++
++// The first live (not cancelled) appointment that overlaps the given time, if any.
++export function findConflict(userId, date, startMin, duration, ignoreId = 0) {
++  const r = db.prepare(`
++    SELECT * FROM appointments
++    WHERE user_id = ? AND date = ? AND status != 'cancelled' AND id != ?
++      AND start_min < ? AND start_min + duration > ?
++    ORDER BY start_min LIMIT 1
++  `).get(userId, date, ignoreId, startMin + duration, startMin)
++  return r ? toAppt(r) : null
++}
++
++export function createAppointment(userId, a) {
++  const r = db.prepare(`
++    INSERT INTO appointments (user_id, title, client, type, date, start_min, duration, status, notes)
++    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
++  `).run(userId, a.title, a.client, a.type, a.date, a.startMin, a.duration, a.status, a.notes)
++  return getAppointment(Number(r.lastInsertRowid), userId)
++}
++
++export function updateAppointment(id, userId, a) {
++  db.prepare(`
++    UPDATE appointments SET title = ?, client = ?, type = ?, date = ?, start_min = ?, duration = ?, status = ?, notes = ?
++    WHERE id = ? AND user_id = ?
++  `).run(a.title, a.client, a.type, a.date, a.startMin, a.duration, a.status, a.notes, id, userId)
++  return getAppointment(id, userId)
++}
++
++export function setStatus(id, userId, status) {
++  db.prepare('UPDATE appointments SET status = ? WHERE id = ? AND user_id = ?').run(status, id, userId)
++  return getAppointment(id, userId)
++}
++
++export const deleteAppointment = (id, userId) =>
++  db.prepare('DELETE FROM appointments WHERE id = ? AND user_id = ?').run(id, userId).changes > 0
+-- 
+2.43.0
+
