@@ -1,0 +1,56 @@
+From 7a1b8d2aabb34e1847da54485d6dcb1b597b250a Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:52:47 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 7
+
+---
+ server/index.js | 27 ++++++++++++++++++++++++++-
+ 1 file changed, 26 insertions(+), 1 deletion(-)
+
+diff --git a/server/index.js b/server/index.js
+index 83f1a46..6dff189 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -1,6 +1,10 @@
+ import http from 'node:http'
+ import { hashPassword, verifyPassword, hashToken, newToken, validateCredentials } from './auth.js'
+-import { createUser, getUserByUsername, createSession, getSessionUser, deleteSession, TYPES, STATUSES } from './db.js'
++import { validateAppointment } from './validate.js'
++import {
++  createUser, getUserByUsername, createSession, getSessionUser, deleteSession, TYPES, STATUSES,
++  listAppointments, getAppointment, createAppointment, updateAppointment, deleteAppointment,
++} from './db.js'
+ import { WORK_START, WORK_END, STEP, DURATIONS } from './time.js'
+ 
+ const PORT = process.env.PORT || 3001
+@@ -108,6 +112,27 @@ const server = http.createServer(async (req, res) => {
+     const user = currentUser(req)
+     if (!user) return send(res, 401, { error: 'Please log in.' })
+ 
++    if (path === '/api/appointments' && method === 'GET') return send(res, 200, listAppointments(user.id))
++
++    if (path === '/api/appointments' && method === 'POST') {
++      const { error, value } = validateAppointment(await readJson(req))
++      if (error) return send(res, 400, { error })
++      return send(res, 201, createAppointment(user.id, value))
++    }
++
++    const m = path.match(/^\/api\/appointments\/(\d+)$/)
++    if (m) {
++      const id = Number(m[1])
++      if (!getAppointment(id, user.id)) return send(res, 404, { error: 'Appointment not found.' })
++      if (method === 'GET') return send(res, 200, getAppointment(id, user.id))
++      if (method === 'PUT') {
++        const { error, value } = validateAppointment(await readJson(req))
++        if (error) return send(res, 400, { error })
++        return send(res, 200, updateAppointment(id, user.id, value))
++      }
++      if (method === 'DELETE') { deleteAppointment(id, user.id); return send(res, 204, null) }
++    }
++
+     send(res, 404, { error: 'Not found.' })
+   } catch (e) {
+     send(res, 400, { error: e.message || 'Bad request.' })
+-- 
+2.43.0
+

@@ -1,0 +1,72 @@
+From 51cc76d80ece73cfe7508bcc13ab10e34cac6dc2 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:52:47 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 8
+
+---
+ server/index.js | 27 +++++++++++++++++++++++++--
+ 1 file changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/server/index.js b/server/index.js
+index 6dff189..cbfed98 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -3,9 +3,9 @@ import { hashPassword, verifyPassword, hashToken, newToken, validateCredentials
+ import { validateAppointment } from './validate.js'
+ import {
+   createUser, getUserByUsername, createSession, getSessionUser, deleteSession, TYPES, STATUSES,
+-  listAppointments, getAppointment, createAppointment, updateAppointment, deleteAppointment,
++  listAppointments, getAppointment, createAppointment, updateAppointment, deleteAppointment, findConflict,
+ } from './db.js'
+-import { WORK_START, WORK_END, STEP, DURATIONS } from './time.js'
++import { WORK_START, WORK_END, STEP, DURATIONS, formatTime } from './time.js'
+ 
+ const PORT = process.env.PORT || 3001
+ 
+@@ -68,6 +68,21 @@ function recordFailure(key) {
+   else f.count++
+ }
+ 
++// ---------- double-booking protection ----------
++// The next start time (same day, same length) with no overlap, or null if the day is full.
++function suggestSlot(userId, v, ignoreId) {
++  for (let s = v.startMin + STEP; s + v.duration <= WORK_END; s += STEP) {
++    if (!findConflict(userId, v.date, s, v.duration, ignoreId)) return formatTime(s)
++  }
++  return null
++}
++
++function conflictError(userId, v, ignoreId) {
++  const c = findConflict(userId, v.date, v.startMin, v.duration, ignoreId)
++  if (!c) return null
++  return { error: `That time overlaps "${c.title}" (${c.start}-${c.end}).`, suggestion: suggestSlot(userId, v, ignoreId) }
++}
++
+ const server = http.createServer(async (req, res) => {
+   try {
+     const url = new URL(req.url, 'http://localhost')
+@@ -117,6 +132,10 @@ const server = http.createServer(async (req, res) => {
+     if (path === '/api/appointments' && method === 'POST') {
+       const { error, value } = validateAppointment(await readJson(req))
+       if (error) return send(res, 400, { error })
++      if (value.status !== 'cancelled') {
++        const clash = conflictError(user.id, value, 0)
++        if (clash) return send(res, 409, clash)
++      }
+       return send(res, 201, createAppointment(user.id, value))
+     }
+ 
+@@ -128,6 +147,10 @@ const server = http.createServer(async (req, res) => {
+       if (method === 'PUT') {
+         const { error, value } = validateAppointment(await readJson(req))
+         if (error) return send(res, 400, { error })
++        if (value.status !== 'cancelled') {
++          const clash = conflictError(user.id, value, id)
++          if (clash) return send(res, 409, clash)
++        }
+         return send(res, 200, updateAppointment(id, user.id, value))
+       }
+       if (method === 'DELETE') { deleteAppointment(id, user.id); return send(res, 204, null) }
+-- 
+2.43.0
+

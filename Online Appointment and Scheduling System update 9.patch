@@ -1,0 +1,69 @@
+From 079acf852dc8cc2b8af0ad11e91bd80e7db401f6 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:52:47 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 9
+
+---
+ server/index.js | 31 ++++++++++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/server/index.js b/server/index.js
+index cbfed98..31efbe4 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -4,8 +4,9 @@ import { validateAppointment } from './validate.js'
+ import {
+   createUser, getUserByUsername, createSession, getSessionUser, deleteSession, TYPES, STATUSES,
+   listAppointments, getAppointment, createAppointment, updateAppointment, deleteAppointment, findConflict,
++  setStatus, appointmentsOnDay,
+ } from './db.js'
+-import { WORK_START, WORK_END, STEP, DURATIONS, formatTime } from './time.js'
++import { WORK_START, WORK_END, STEP, DURATIONS, formatTime, parseDate, parseTime, overlaps } from './time.js'
+ 
+ const PORT = process.env.PORT || 3001
+ 
+@@ -139,6 +140,24 @@ const server = http.createServer(async (req, res) => {
+       return send(res, 201, createAppointment(user.id, value))
+     }
+ 
++    // One day's appointments, how full the day is, and the next open slot (optionally after a time).
++    if (path === '/api/day' && method === 'GET') {
++      const date = parseDate(url.searchParams.get('date') || '')
++      if (!date) return send(res, 400, { error: 'Date must be a real date like 2026-11-10.' })
++      const duration = Number(url.searchParams.get('duration')) || 30
++      const after = parseTime(url.searchParams.get('after') || '') ?? WORK_START
++      const appointments = appointmentsOnDay(user.id, date)
++      const live = appointments.filter((a) => a.status !== 'cancelled')
++      let nextFree = null
++      for (let s = Math.max(WORK_START, Math.ceil(after / STEP) * STEP); s + duration <= WORK_END; s += STEP) {
++        if (!live.some((a) => overlaps(s, duration, a.startMin, a.duration))) { nextFree = formatTime(s); break }
++      }
++      return send(res, 200, {
++        date, workStart: WORK_START, workEnd: WORK_END, appointments, nextFree,
++        bookedMinutes: live.reduce((n, a) => n + a.duration, 0), totalMinutes: WORK_END - WORK_START,
++      })
++    }
++
+     const m = path.match(/^\/api\/appointments\/(\d+)$/)
+     if (m) {
+       const id = Number(m[1])
+@@ -153,6 +172,16 @@ const server = http.createServer(async (req, res) => {
+         }
+         return send(res, 200, updateAppointment(id, user.id, value))
+       }
++      if (method === 'PATCH') {
++        const status = (await readJson(req)).status
++        if (!STATUSES.includes(status)) return send(res, 400, { error: 'Status must be scheduled, completed or cancelled.' })
++        const cur = getAppointment(id, user.id)
++        if (status !== 'cancelled') { // reopening an appointment must not create a clash
++          const clash = conflictError(user.id, cur, id)
++          if (clash) return send(res, 409, clash)
++        }
++        return send(res, 200, setStatus(id, user.id, status))
++      }
+       if (method === 'DELETE') { deleteAppointment(id, user.id); return send(res, 204, null) }
+     }
+ 
+-- 
+2.43.0
+
