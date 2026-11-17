@@ -1,0 +1,95 @@
+From 0f9d4bd9ff0d9ab0b4c2e277237b1561e5f7c262 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:54:04 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 11
+
+---
+ client/src/api.js       | 33 +++++++++++++++++++++++++++++++++
+ client/src/lib/dates.js | 35 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 68 insertions(+)
+ create mode 100644 client/src/api.js
+ create mode 100644 client/src/lib/dates.js
+
+diff --git a/client/src/api.js b/client/src/api.js
+new file mode 100644
+index 0000000..bfd3049
+--- /dev/null
++++ b/client/src/api.js
+@@ -0,0 +1,33 @@
++async function request(path, options = {}) {
++  let res
++  try {
++    // The login cookie is sent automatically because the app and API share one origin.
++    res = await fetch('/api' + path, { headers: { 'Content-Type': 'application/json' }, ...options })
++  } catch {
++    throw new Error('Cannot reach the server. Is it running on port 3001?')
++  }
++  const data = res.status === 204 ? null : await res.json().catch(() => null)
++  if (!res.ok) {
++    const err = new Error((data && data.error) || 'Request failed.')
++    err.status = res.status
++    err.suggestion = data && data.suggestion
++    throw err
++  }
++  return data
++}
++
++const body = (method, data) => ({ method, body: JSON.stringify(data) })
++
++export const api = {
++  me: () => request('/me'),
++  register: (c) => request('/register', body('POST', c)),
++  login: (c) => request('/login', body('POST', c)),
++  logout: () => request('/logout', { method: 'POST' }),
++  config: () => request('/config'),
++  list: () => request('/appointments'),
++  create: (a) => request('/appointments', body('POST', a)),
++  update: (id, a) => request(`/appointments/${id}`, body('PUT', a)),
++  setStatus: (id, status) => request(`/appointments/${id}`, body('PATCH', { status })),
++  remove: (id) => request(`/appointments/${id}`, { method: 'DELETE' }),
++  day: (date, extra = '') => request(`/day?date=${date}${extra}`),
++}
+diff --git a/client/src/lib/dates.js b/client/src/lib/dates.js
+new file mode 100644
+index 0000000..0cfeeb6
+--- /dev/null
++++ b/client/src/lib/dates.js
+@@ -0,0 +1,35 @@
++// Dates travel as "YYYY-MM-DD" and times as "HH:MM". These helpers use the browser's local time.
++export const pad = (n) => String(n).padStart(2, '0')
++export const minToStr = (min) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`
++
++export function toDateStr(d) {
++  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
++}
++export const todayStr = () => toDateStr(new Date())
++
++const parse = (str) => {
++  const [y, m, d] = str.split('-').map(Number)
++  return new Date(y, m - 1, d)
++}
++export function addDays(str, n) {
++  const d = parse(str)
++  d.setDate(d.getDate() + n)
++  return toDateStr(d)
++}
++export const longDate = (str) =>
++  parse(str).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
++export const shortDate = (str) =>
++  parse(str).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
++
++// "14:30" -> "2:30 PM"
++export function to12h(hhmm) {
++  const [h, m] = hhmm.split(':').map(Number)
++  return `${((h + 11) % 12) + 1}:${pad(m)} ${h >= 12 ? 'PM' : 'AM'}`
++}
++
++// The current time rounded up to the next 15 minutes, as "HH:MM".
++export function nowRoundedUp() {
++  const d = new Date()
++  const m = Math.ceil((d.getHours() * 60 + d.getMinutes()) / 15) * 15
++  return minToStr(Math.min(m, 23 * 60 + 45))
++}
+-- 
+2.43.0
+

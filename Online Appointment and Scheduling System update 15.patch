@@ -1,0 +1,167 @@
+From dc0ca78e6f0361b14977eb1c1b36b6879cc4f5eb Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:55:16 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 15
+
+---
+ client/src/Dashboard.jsx                  | 20 ++++++
+ client/src/components/AppointmentForm.jsx | 74 +++++++++++++++++++++++
+ client/src/components/Modal.jsx           | 20 ++++++
+ 3 files changed, 114 insertions(+)
+ create mode 100644 client/src/components/AppointmentForm.jsx
+ create mode 100644 client/src/components/Modal.jsx
+
+diff --git a/client/src/Dashboard.jsx b/client/src/Dashboard.jsx
+index fdab77f..1229ba7 100644
+--- a/client/src/Dashboard.jsx
++++ b/client/src/Dashboard.jsx
+@@ -3,6 +3,8 @@ import { api } from './api.js'
+ import { todayStr, nowRoundedUp } from './lib/dates.js'
+ import Header from './components/Header.jsx'
+ import Icon from './components/Icon.jsx'
++import Modal from './components/Modal.jsx'
++import AppointmentForm from './components/AppointmentForm.jsx'
+ 
+ const DEFAULT_CONFIG = {
+   types: ['Meeting'], statuses: ['scheduled', 'completed', 'cancelled'], durations: [30], workStart: 480, workEnd: 1080, step: 15,
+@@ -95,13 +97,31 @@ export default function Dashboard({ user, onLogout, onExpired }) {
+             <h1>Dashboard</h1>
+             <p className="sub">Book appointments, avoid double-booking, and see your day at a glance.</p>
+           </div>
++          <button type="button" className="btn primary" onClick={() => openForm()}>
++            <Icon name="plus" size={16} /> New appointment
++          </button>
+         </div>
+         {loadError && <p className="error" role="alert">{loadError}</p>}
+ 
+ 
+ 
++      <section className="card">
++        <div className="card-head"><h2>Appointments</h2></div>
++        {appointments.length === 0 ? <p className="empty">No appointments yet.</p> : (
++          <ul>
++            {appointments.map((a) => <li key={a.id}>{a.date} {a.start}-{a.end}: {a.title} ({a.client}) - {a.status}</li>)}
++          </ul>
++        )}
++      </section>
+       </main>
+ 
++      {form.open && (
++        <Modal onClose={closeForm}>
++          <AppointmentForm key={form.key} initial={form.initial} config={config} error={formError}
++            suggestion={suggestion} onSave={save} onCancel={closeForm} />
++        </Modal>
++      )}
++      {toast && <div className="toast" role="status">{toast}</div>}
+     </div>
+   )
+ }
+diff --git a/client/src/components/AppointmentForm.jsx b/client/src/components/AppointmentForm.jsx
+new file mode 100644
+index 0000000..2ec1499
+--- /dev/null
++++ b/client/src/components/AppointmentForm.jsx
+@@ -0,0 +1,74 @@
++import { useState } from 'react'
++import { to12h, minToStr } from '../lib/dates.js'
++
++const BLANK = { title: '', client: '', type: 'Meeting', date: '', start: '09:00', duration: 30, status: 'scheduled', notes: '' }
++
++export default function AppointmentForm({ initial, config, error, suggestion, onSave, onCancel }) {
++  const [v, setV] = useState({ ...BLANK, ...initial })
++  const set = (k) => (e) => setV({ ...v, [k]: e.target.value })
++  const editing = Boolean(initial && initial.id)
++
++  const starts = []
++  for (let m = config.workStart; m < config.workEnd; m += config.step) starts.push(minToStr(m))
++
++  return (
++    <form className="form" onSubmit={(e) => { e.preventDefault(); onSave({ ...v, duration: Number(v.duration) }) }}>
++      <h2>{editing ? 'Edit appointment' : 'New appointment'}</h2>
++
++      <label>Title
++        <input value={v.title} onChange={set('title')} placeholder="Initial consultation" autoFocus required />
++      </label>
++
++      <div className="grid2">
++        <label>Client / attendee
++          <input value={v.client} onChange={set('client')} placeholder="Maria Santos" required />
++        </label>
++        <label>Type
++          <select value={v.type} onChange={set('type')}>
++            {config.types.map((t) => <option key={t}>{t}</option>)}
++          </select>
++        </label>
++        <label>Date
++          <input type="date" value={v.date} onChange={set('date')} required />
++        </label>
++        <label>Start time
++          <select value={v.start} onChange={set('start')}>
++            {starts.map((s) => <option key={s} value={s}>{to12h(s)}</option>)}
++          </select>
++        </label>
++        <label>Duration
++          <select value={v.duration} onChange={set('duration')}>
++            {config.durations.map((d) => <option key={d} value={d}>{d} minutes</option>)}
++          </select>
++        </label>
++        {editing && (
++          <label>Status
++            <select value={v.status} onChange={set('status')}>
++              {config.statuses.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
++            </select>
++          </label>
++        )}
++      </div>
++
++      <label>Notes
++        <input value={v.notes} onChange={set('notes')} placeholder="Bring last month's report" />
++      </label>
++
++      {error && (
++        <p className="error" role="alert">
++          {error}{' '}
++          {suggestion && (
++            <button type="button" className="link" onClick={() => setV({ ...v, start: suggestion })}>
++              Use {to12h(suggestion)}
++            </button>
++          )}
++        </p>
++      )}
++
++      <div className="actions">
++        <button type="submit" className="primary">{editing ? 'Save changes' : 'Book appointment'}</button>
++        <button type="button" onClick={onCancel}>Cancel</button>
++      </div>
++    </form>
++  )
++}
+diff --git a/client/src/components/Modal.jsx b/client/src/components/Modal.jsx
+new file mode 100644
+index 0000000..0e6e53b
+--- /dev/null
++++ b/client/src/components/Modal.jsx
+@@ -0,0 +1,20 @@
++import { useEffect } from 'react'
++
++// A centred dialog. Esc or a click on the dark backdrop closes it.
++export default function Modal({ onClose, children }) {
++  useEffect(() => {
++    const onKey = (e) => { if (e.key === 'Escape') onClose() }
++    window.addEventListener('keydown', onKey)
++    document.body.style.overflow = 'hidden'
++    return () => {
++      window.removeEventListener('keydown', onKey)
++      document.body.style.overflow = ''
++    }
++  }, [onClose])
++
++  return (
++    <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
++      <div className="dialog" role="dialog" aria-modal="true">{children}</div>
++    </div>
++  )
++}
+-- 
+2.43.0
+

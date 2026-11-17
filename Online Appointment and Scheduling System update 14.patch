@@ -1,0 +1,184 @@
+From 15d0315d700888649f62dae0ce14413bf196c821 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:55:16 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 14
+
+---
+ client/src/App.jsx               |  10 +--
+ client/src/Dashboard.jsx         | 107 +++++++++++++++++++++++++++++++
+ client/src/components/Header.jsx |  23 +++++++
+ 3 files changed, 133 insertions(+), 7 deletions(-)
+ create mode 100644 client/src/Dashboard.jsx
+ create mode 100644 client/src/components/Header.jsx
+
+diff --git a/client/src/App.jsx b/client/src/App.jsx
+index 8a9e0bf..03c89af 100644
+--- a/client/src/App.jsx
++++ b/client/src/App.jsx
+@@ -1,6 +1,7 @@
+ import { useEffect, useState } from 'react'
+ import { api } from './api.js'
+ import AuthForm from './components/AuthForm.jsx'
++import Dashboard from './Dashboard.jsx'
+ 
+ export default function App() {
+   // undefined = still checking, null = logged out, object = logged in
+@@ -23,11 +24,6 @@ export default function App() {
+   if (user === undefined) return <main><p className="sub">Loading...</p></main>
+   if (user === null) return <AuthForm onSubmit={authenticate} />
+ 
+-  return (
+-    <main>
+-      <h1>Online Appointment and Scheduling System</h1>
+-      <p className="sub">Signed in as {user.username}.</p>
+-      <p><button type="button" className="btn" onClick={logout}>Log out</button></p>
+-    </main>
+-  )
++  // key={user.id} gives each person a fresh dashboard, so nothing carries over between accounts
++  return <Dashboard key={user.id} user={user} onLogout={logout} onExpired={() => setUser(null)} />
+ }
+diff --git a/client/src/Dashboard.jsx b/client/src/Dashboard.jsx
+new file mode 100644
+index 0000000..fdab77f
+--- /dev/null
++++ b/client/src/Dashboard.jsx
+@@ -0,0 +1,107 @@
++import { useEffect, useRef, useState } from 'react'
++import { api } from './api.js'
++import { todayStr, nowRoundedUp } from './lib/dates.js'
++import Header from './components/Header.jsx'
++import Icon from './components/Icon.jsx'
++
++const DEFAULT_CONFIG = {
++  types: ['Meeting'], statuses: ['scheduled', 'completed', 'cancelled'], durations: [30], workStart: 480, workEnd: 1080, step: 15,
++}
++
++export default function Dashboard({ user, onLogout, onExpired }) {
++  const [appointments, setAppointments] = useState([])
++  const [config, setConfig] = useState(DEFAULT_CONFIG)
++  const [date, setDate] = useState(todayStr())
++  const [day, setDay] = useState(null)
++  const [today, setToday] = useState(null)
++  const [form, setForm] = useState({ open: false, key: 0, initial: {} })
++  const [formError, setFormError] = useState('')
++  const [suggestion, setSuggestion] = useState('')
++  const [toast, setToast] = useState('')
++  const [loadError, setLoadError] = useState('')
++  const toastTimer = useRef(null)
++
++  const fail = (e) => (e.status === 401 ? onExpired() : setLoadError(e.message))
++  const loadList = () => api.list().then((l) => { setAppointments(l); setLoadError('') }).catch(fail)
++
++  useEffect(() => {
++    api.config().then(setConfig).catch(() => {})
++    loadList()
++  }, [])
++
++  // Reload the timeline and the "today" numbers whenever the date or the list changes.
++  useEffect(() => {
++    api.day(date).then(setDay).catch(fail)
++    api.day(todayStr(), '&after=' + nowRoundedUp()).then(setToday).catch(fail)
++  }, [date, appointments])
++
++  const openForm = (initial = {}) => {
++    setFormError(''); setSuggestion('')
++    setForm((f) => ({ open: true, key: f.key + 1, initial: initial.id ? initial : { date, ...initial } }))
++  }
++  const closeForm = () => setForm((f) => ({ ...f, open: false }))
++
++  const notify = (text) => {
++    setToast(text)
++    clearTimeout(toastTimer.current)
++    toastTimer.current = setTimeout(() => setToast(''), 3000)
++  }
++
++  async function save(values) {
++    setFormError(''); setSuggestion('')
++    try {
++      const editing = Boolean(form.initial.id)
++      if (editing) await api.update(form.initial.id, values)
++      else await api.create(values)
++      closeForm()
++      notify(editing ? 'Appointment updated' : 'Appointment booked')
++      await loadList()
++    } catch (e) {
++      if (e.status === 401) return onExpired()
++      setFormError(e.message)
++      setSuggestion(e.suggestion || '')
++    }
++  }
++
++  async function remove(a) {
++    if (!window.confirm(`Delete "${a.title}" on ${a.date} at ${a.start}?`)) return
++    try {
++      await api.remove(a.id)
++    } catch (e) {
++      if (e.status === 401) return onExpired()
++      throw e
++    }
++    notify(`Deleted ${a.title}`)
++    loadList()
++  }
++
++  async function changeStatus(a, status) {
++    try {
++      await api.setStatus(a.id, status)
++      notify(status === 'completed' ? 'Marked as completed' : status === 'cancelled' ? 'Appointment cancelled' : 'Appointment reopened')
++      loadList()
++    } catch (e) {
++      if (e.status === 401) return onExpired()
++      notify(e.message) // for example: reopening would overlap another appointment
++    }
++  }
++
++  return (
++    <div className="app">
++      <Header user={user} onLogout={onLogout} />
++      <main className="page">
++        <div className="pagehead">
++          <div>
++            <h1>Dashboard</h1>
++            <p className="sub">Book appointments, avoid double-booking, and see your day at a glance.</p>
++          </div>
++        </div>
++        {loadError && <p className="error" role="alert">{loadError}</p>}
++
++
++
++      </main>
++
++    </div>
++  )
++}
+diff --git a/client/src/components/Header.jsx b/client/src/components/Header.jsx
+new file mode 100644
+index 0000000..71a8988
+--- /dev/null
++++ b/client/src/components/Header.jsx
+@@ -0,0 +1,23 @@
++import Icon from './Icon.jsx'
++import ThemeToggle from './ThemeToggle.jsx'
++
++export default function Header({ user, onLogout }) {
++  return (
++    <header className="header">
++      <div className="brand">
++        <span className="logo"><Icon name="calendar" size={20} /></span>
++        <span>Appointly</span>
++      </div>
++      <div className="header-right">
++        <ThemeToggle />
++        <div className="userchip" title={user.username}>
++          <span className="avatar">{user.username[0].toUpperCase()}</span>
++          <span className="uname">{user.username}</span>
++        </div>
++        <button type="button" className="btn" onClick={onLogout} aria-label="Log out">
++          <Icon name="logout" size={16} /><span className="btn-text">Log out</span>
++        </button>
++      </div>
++    </header>
++  )
++}
+-- 
+2.43.0
+

@@ -1,0 +1,177 @@
+From a3f1f19246bd1f04372be5b81e618ccc82733470 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:54:04 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 13
+
+---
+ client/src/App.jsx                 |  32 +++++++-
+ client/src/components/AuthForm.jsx | 118 +++++++++++++++++++++++++++++
+ 2 files changed, 149 insertions(+), 1 deletion(-)
+ create mode 100644 client/src/components/AuthForm.jsx
+
+diff --git a/client/src/App.jsx b/client/src/App.jsx
+index d77c974..8a9e0bf 100644
+--- a/client/src/App.jsx
++++ b/client/src/App.jsx
+@@ -1,3 +1,33 @@
++import { useEffect, useState } from 'react'
++import { api } from './api.js'
++import AuthForm from './components/AuthForm.jsx'
++
+ export default function App() {
+-  return <h1>Online Appointment and Scheduling System</h1>
++  // undefined = still checking, null = logged out, object = logged in
++  const [user, setUser] = useState(undefined)
++
++  useEffect(() => {
++    api.me().then(setUser).catch(() => setUser(null))
++  }, [])
++
++  async function authenticate(mode, creds) {
++    const u = mode === 'register' ? await api.register(creds) : await api.login(creds)
++    setUser(u)
++  }
++
++  async function logout() {
++    try { await api.logout() } catch { /* even if the call fails, leave the screen */ }
++    setUser(null)
++  }
++
++  if (user === undefined) return <main><p className="sub">Loading...</p></main>
++  if (user === null) return <AuthForm onSubmit={authenticate} />
++
++  return (
++    <main>
++      <h1>Online Appointment and Scheduling System</h1>
++      <p className="sub">Signed in as {user.username}.</p>
++      <p><button type="button" className="btn" onClick={logout}>Log out</button></p>
++    </main>
++  )
+ }
+diff --git a/client/src/components/AuthForm.jsx b/client/src/components/AuthForm.jsx
+new file mode 100644
+index 0000000..b4b0973
+--- /dev/null
++++ b/client/src/components/AuthForm.jsx
+@@ -0,0 +1,118 @@
++import { useState } from 'react'
++import Icon from './Icon.jsx'
++import ThemeToggle from './ThemeToggle.jsx'
++
++const LABELS = ['Too short', 'Weak', 'Okay', 'Good', 'Strong']
++
++// A rough 0-4 score to guide people. The server only enforces the 8 character minimum.
++function strength(pw) {
++  if (pw.length < 8) return 0
++  let s = 1
++  if (pw.length >= 12) s++
++  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++
++  if (/\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)) s++
++  return s
++}
++
++export default function AuthForm({ onSubmit }) {
++  const [mode, setMode] = useState('login')
++  const [username, setUsername] = useState('')
++  const [password, setPassword] = useState('')
++  const [confirm, setConfirm] = useState('')
++  const [show, setShow] = useState(false)
++  const [error, setError] = useState('')
++  const [busy, setBusy] = useState(false)
++  const register = mode === 'register'
++  const score = strength(password)
++
++  async function submit(e) {
++    e.preventDefault()
++    setError('')
++    if (register && password !== confirm) return setError('Passwords do not match.')
++    setBusy(true)
++    try {
++      await onSubmit(mode, { username, password })
++    } catch (err) {
++      setError(err.message)
++      setBusy(false)
++    }
++  }
++
++  function switchMode() {
++    setMode(register ? 'login' : 'register')
++    setError('')
++    setPassword('')
++    setConfirm('')
++  }
++
++  return (
++    <div className="authwrap">
++      <aside className="authbrand">
++        <div className="brand big"><span className="logo"><Icon name="calendar" size={22} /></span>Appointly</div>
++        <h2>Book it. Never double-book it.</h2>
++        <ul>
++          <li>Overlaps are caught before they happen</li>
++          <li>See your whole day on one timeline</li>
++          <li>Your appointments stay private to your account</li>
++        </ul>
++      </aside>
++
++      <main className="authpage">
++        <div className="authtop"><ThemeToggle /></div>
++        <h1>{register ? 'Create your account' : 'Welcome back'}</h1>
++        <p className="sub">
++          {register ? 'Your schedule stays private to you.' : 'Log in to manage your appointments.'}
++        </p>
++
++        <form className="form" onSubmit={submit} style={{ marginTop: 18 }}>
++          <label>Username
++            <input value={username} onChange={(e) => setUsername(e.target.value)}
++              autoComplete="username" autoCapitalize="none" required />
++          </label>
++
++          <div className="pwfield">
++            <label>Password
++              <input type={show ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
++                autoComplete={register ? 'new-password' : 'current-password'}
++                minLength={register ? 8 : undefined} required />
++            </label>
++            <button type="button" className="link pwtoggle" onClick={() => setShow(!show)}>
++              {show ? 'Hide' : 'Show'}
++            </button>
++          </div>
++
++          {register && password && (
++            <>
++              <div className="meter" aria-hidden="true">
++                {[1, 2, 3, 4].map((n) => <i key={n} className={n <= score ? 's' + score : ''} />)}
++              </div>
++              <p className="meterlabel" role="status">Password strength: {LABELS[score]}</p>
++            </>
++          )}
++
++          {register && (
++            <label>Confirm password
++              <input type={show ? 'text' : 'password'} value={confirm} onChange={(e) => setConfirm(e.target.value)}
++                autoComplete="new-password" required />
++            </label>
++          )}
++          {register && !password && <p className="hint">Use at least 8 characters.</p>}
++          {error && <p className="error" role="alert">{error}</p>}
++
++          <div className="actions">
++            <button type="submit" className="primary" disabled={busy}>
++              {busy ? 'Please wait...' : register ? 'Create account' : 'Log in'}
++            </button>
++          </div>
++        </form>
++
++        <p className="switch">
++          {register ? 'Already have an account? ' : 'New here? '}
++          <button type="button" className="link" onClick={switchMode}>
++            {register ? 'Log in' : 'Create an account'}
++          </button>
++        </p>
++      </main>
++    </div>
++  )
++}
+-- 
+2.43.0
+

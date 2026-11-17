@@ -1,0 +1,112 @@
+From a16e288bd0f67c823fb4f3754de81ac758e7d176 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:55:16 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 18
+
+---
+ client/src/Dashboard.jsx              |  5 ++
+ client/src/components/DaySchedule.jsx | 69 +++++++++++++++++++++++++++
+ 2 files changed, 74 insertions(+)
+ create mode 100644 client/src/components/DaySchedule.jsx
+
+diff --git a/client/src/Dashboard.jsx b/client/src/Dashboard.jsx
+index 24b6c2e..4c2137c 100644
+--- a/client/src/Dashboard.jsx
++++ b/client/src/Dashboard.jsx
+@@ -5,6 +5,7 @@ import Header from './components/Header.jsx'
+ import Icon from './components/Icon.jsx'
+ import Modal from './components/Modal.jsx'
+ import StatCards from './components/StatCards.jsx'
++import DaySchedule from './components/DaySchedule.jsx'
+ import AppointmentList from './components/AppointmentList.jsx'
+ import AppointmentForm from './components/AppointmentForm.jsx'
+ 
+@@ -108,6 +109,10 @@ export default function Dashboard({ user, onLogout, onExpired }) {
+         <StatCards appointments={appointments} today={today}
+           onBook={(start) => openForm({ date: todayStr(), start })} onEdit={openForm} />
+ 
++        <section className="card">
++          <DaySchedule date={date} day={day} onDate={setDate}
++            onBook={(d, start) => openForm({ date: d, start })} onEdit={openForm} />
++        </section>
+ 
+         <section className="card">
+           <div className="card-head"><h2>All appointments</h2></div>
+diff --git a/client/src/components/DaySchedule.jsx b/client/src/components/DaySchedule.jsx
+new file mode 100644
+index 0000000..9c1210e
+--- /dev/null
++++ b/client/src/components/DaySchedule.jsx
+@@ -0,0 +1,69 @@
++import Icon from './Icon.jsx'
++import { addDays, longDate, minToStr, to12h, todayStr } from '../lib/dates.js'
++
++const SLOT = 30  // minutes per clickable row
++const PX = 1.4   // pixels per minute
++
++export default function DaySchedule({ date, day, onDate, onBook, onEdit }) {
++  const isToday = date === todayStr()
++  const live = day ? day.appointments.filter((a) => a.status !== 'cancelled') : []
++  const hidden = day ? day.appointments.length - live.length : 0
++  const pct = day ? Math.round((day.bookedMinutes / day.totalMinutes) * 100) : 0
++  const level = pct >= 90 ? 'hot' : pct >= 70 ? 'warm' : ''
++  const rows = day ? (day.workEnd - day.workStart) / SLOT : 0
++
++  return (
++    <>
++      <div className="card-head">
++        <div className="daynav">
++          <button type="button" className="iconbtn" onClick={() => onDate(addDays(date, -1))} aria-label="Previous day">
++            <Icon name="chevL" />
++          </button>
++          <h2>{longDate(date)}</h2>
++          <button type="button" className="iconbtn" onClick={() => onDate(addDays(date, 1))} aria-label="Next day">
++            <Icon name="chevR" />
++          </button>
++          <button type="button" className="btn" onClick={() => onDate(todayStr())} disabled={isToday}>Today</button>
++          <input type="date" className="datepick" value={date} aria-label="Pick a date"
++            onChange={(e) => e.target.value && onDate(e.target.value)} />
++        </div>
++      </div>
++
++      {day ? (
++        <>
++          <div className="daymeta">
++            <span>{live.length} {live.length === 1 ? 'appointment' : 'appointments'}</span>
++            <div className={'bar ' + level}><i style={{ width: pct + '%' }} /></div>
++            <span>{pct}% booked{hidden > 0 ? `, ${hidden} cancelled hidden` : ''}</span>
++          </div>
++
++          <div className="timeline" style={{ height: rows * SLOT * PX }}>
++            {Array.from({ length: rows }, (_, i) => {
++              const start = day.workStart + i * SLOT
++              const label = to12h(minToStr(start))
++              return (
++                <button key={start} type="button" className={'slot' + (i % 2 === 0 ? ' hour' : '')}
++                  style={{ top: i * SLOT * PX, height: SLOT * PX }}
++                  onClick={() => onBook(date, minToStr(start))} aria-label={`Book ${label}`}>
++                  <span className="slot-time">{i % 2 === 0 ? label : ''}</span>
++                  <span className="slot-add"><Icon name="plus" size={16} /></span>
++                </button>
++              )
++            })}
++
++            {live.map((a) => (
++              <button key={a.id} type="button" className={`appt ${a.status}${a.duration <= 15 ? ' short' : ''}`}
++                style={{ top: (a.startMin - day.workStart) * PX, height: a.duration * PX - 2 }}
++                onClick={() => onEdit(a)} aria-label={`Edit ${a.title}, ${to12h(a.start)}`}>
++                <b>{a.title}</b>
++                <span>{to12h(a.start)} - {to12h(a.end)} with {a.client}</span>
++              </button>
++            ))}
++          </div>
++        </>
++      ) : (
++        <p className="empty">Loading schedule...</p>
++      )}
++    </>
++  )
++}
+-- 
+2.43.0
+

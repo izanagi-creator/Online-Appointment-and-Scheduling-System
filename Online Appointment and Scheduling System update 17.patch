@@ -1,0 +1,188 @@
+From 35715d0403ef1ca535195827430088fe1b1c3c06 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 02:55:16 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 17
+
+---
+ client/src/Dashboard.jsx                  |  14 +--
+ client/src/components/AppointmentList.jsx | 136 ++++++++++++++++++++++
+ 2 files changed, 142 insertions(+), 8 deletions(-)
+ create mode 100644 client/src/components/AppointmentList.jsx
+
+diff --git a/client/src/Dashboard.jsx b/client/src/Dashboard.jsx
+index 3e9cb3e..24b6c2e 100644
+--- a/client/src/Dashboard.jsx
++++ b/client/src/Dashboard.jsx
+@@ -5,6 +5,7 @@ import Header from './components/Header.jsx'
+ import Icon from './components/Icon.jsx'
+ import Modal from './components/Modal.jsx'
+ import StatCards from './components/StatCards.jsx'
++import AppointmentList from './components/AppointmentList.jsx'
+ import AppointmentForm from './components/AppointmentForm.jsx'
+ 
+ const DEFAULT_CONFIG = {
+@@ -108,14 +109,11 @@ export default function Dashboard({ user, onLogout, onExpired }) {
+           onBook={(start) => openForm({ date: todayStr(), start })} onEdit={openForm} />
+ 
+ 
+-      <section className="card">
+-        <div className="card-head"><h2>Appointments</h2></div>
+-        {appointments.length === 0 ? <p className="empty">No appointments yet.</p> : (
+-          <ul>
+-            {appointments.map((a) => <li key={a.id}>{a.date} {a.start}-{a.end}: {a.title} ({a.client}) - {a.status}</li>)}
+-          </ul>
+-        )}
+-      </section>
++        <section className="card">
++          <div className="card-head"><h2>All appointments</h2></div>
++          <AppointmentList appointments={appointments} onAdd={() => openForm()} onEdit={openForm}
++            onDelete={remove} onStatus={changeStatus} />
++        </section>
+       </main>
+ 
+       {form.open && (
+diff --git a/client/src/components/AppointmentList.jsx b/client/src/components/AppointmentList.jsx
+new file mode 100644
+index 0000000..954a279
+--- /dev/null
++++ b/client/src/components/AppointmentList.jsx
+@@ -0,0 +1,136 @@
++import { useEffect, useMemo, useRef, useState } from 'react'
++import Icon from './Icon.jsx'
++import { shortDate, to12h } from '../lib/dates.js'
++
++const COLUMNS = [['when', 'When'], ['title', 'Title'], ['client', 'Client'], ['type', 'Type'], ['status', 'Status']]
++
++function toCsv(rows) {
++  const q = (v) => `"${String(v).replace(/"/g, '""')}"`
++  const lines = rows.map((a) => [a.date, a.start, a.end, a.title, a.client, a.type, a.status, a.notes].map(q).join(','))
++  return ['Date,Start,End,Title,Client,Type,Status,Notes', ...lines].join('\n')
++}
++
++export default function AppointmentList({ appointments, onAdd, onEdit, onDelete, onStatus }) {
++  const [query, setQuery] = useState('')
++  const [status, setStatus] = useState('All')
++  const [sort, setSort] = useState({ key: 'when', dir: 1 })
++  const searchRef = useRef(null)
++
++  // Press "/" anywhere to jump to the search box.
++  useEffect(() => {
++    const onKey = (e) => {
++      if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
++        e.preventDefault()
++        if (searchRef.current) searchRef.current.focus()
++      }
++    }
++    window.addEventListener('keydown', onKey)
++    return () => window.removeEventListener('keydown', onKey)
++  }, [])
++
++  const rows = useMemo(() => {
++    const q = query.trim().toLowerCase()
++    return appointments
++      .map((a) => ({ ...a, when: a.date + ' ' + a.start }))
++      .filter((a) => (status === 'All' || a.status === status) &&
++        (!q || [a.date, a.start, a.title, a.client, a.type, a.status, a.notes].some((v) => String(v).toLowerCase().includes(q))))
++      .sort((a, b) => String(a[sort.key]).localeCompare(String(b[sort.key])) * sort.dir)
++  }, [appointments, query, status, sort])
++
++  const toggleSort = (key) => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }))
++
++  function exportCsv() {
++    const url = URL.createObjectURL(new Blob([toCsv(rows)], { type: 'text/csv' }))
++    const a = document.createElement('a')
++    a.href = url
++    a.download = 'appointments.csv'
++    a.click()
++    URL.revokeObjectURL(url)
++  }
++
++  if (!appointments.length) {
++    return (
++      <div className="empty-state">
++        <Icon name="calendar" size={36} />
++        <h3>No appointments yet</h3>
++        <p>Book your first appointment, or click a free slot on the timeline.</p>
++        <button type="button" className="btn primary" onClick={onAdd}><Icon name="plus" size={16} /> New appointment</button>
++      </div>
++    )
++  }
++
++  return (
++    <>
++      <div className="toolbar">
++        <label className="search">
++          <Icon name="search" size={16} />
++          <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)}
++            placeholder="Search appointments  ( / )" aria-label="Search appointments" />
++        </label>
++        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
++          <option value="All">All statuses</option>
++          <option value="scheduled">Scheduled</option>
++          <option value="completed">Completed</option>
++          <option value="cancelled">Cancelled</option>
++        </select>
++        <span className="count">{rows.length} of {appointments.length}</span>
++        <button type="button" className="btn" onClick={exportCsv} disabled={!rows.length} aria-label="Export CSV">
++          <Icon name="download" size={16} /><span className="btn-text">Export CSV</span>
++        </button>
++      </div>
++
++      {rows.length ? (
++        <div className="scroll">
++          <table>
++            <thead>
++              <tr>
++                {COLUMNS.map(([key, label]) => (
++                  <th key={key} aria-sort={sort.key === key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}>
++                    <button type="button" className="sortbtn" onClick={() => toggleSort(key)}>
++                      {label}{sort.key === key && <Icon name={sort.dir === 1 ? 'up' : 'down'} size={14} />}
++                    </button>
++                  </th>
++                ))}
++                <th><span className="sr">Actions</span></th>
++              </tr>
++            </thead>
++            <tbody>
++              {rows.map((a) => (
++                <tr key={a.id} className={'is-' + a.status}>
++                  <td data-label="When" className="when">
++                    <b>{shortDate(a.date)}</b><span>{to12h(a.start)} - {to12h(a.end)}</span>
++                  </td>
++                  <td data-label="Title"><b className="title">{a.title}</b></td>
++                  <td data-label="Client">{a.client}</td>
++                  <td data-label="Type">{a.type}</td>
++                  <td data-label="Status"><span className={'badge ' + a.status}>{a.status}</span></td>
++                  <td className="rowbtns">
++                    <div className="rowbtn-wrap">
++                      {a.status === 'scheduled' ? (
++                        <>
++                          <button type="button" className="iconbtn good" onClick={() => onStatus(a, 'completed')}
++                            aria-label={`Mark ${a.title} completed`} title="Mark completed"><Icon name="check" size={16} /></button>
++                          <button type="button" className="iconbtn danger" onClick={() => onStatus(a, 'cancelled')}
++                            aria-label={`Cancel ${a.title}`} title="Cancel appointment"><Icon name="x" size={16} /></button>
++                        </>
++                      ) : (
++                        <button type="button" className="iconbtn" onClick={() => onStatus(a, 'scheduled')}
++                          aria-label={`Reopen ${a.title}`} title="Reopen"><Icon name="undo" size={16} /></button>
++                      )}
++                      <button type="button" className="iconbtn" onClick={() => onEdit(a)}
++                        aria-label={`Edit ${a.title}`} title="Edit"><Icon name="edit" size={16} /></button>
++                      <button type="button" className="iconbtn danger" onClick={() => onDelete(a)}
++                        aria-label={`Delete ${a.title}`} title="Delete"><Icon name="trash" size={16} /></button>
++                    </div>
++                  </td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </div>
++      ) : (
++        <p className="empty">No appointments match your search.</p>
++      )}
++    </>
++  )
++}
+-- 
+2.43.0
+
