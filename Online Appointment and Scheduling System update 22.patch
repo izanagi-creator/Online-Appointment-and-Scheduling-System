@@ -1,0 +1,400 @@
+From 249ca562808d9f7c8552b993adc7d1ff222b6eff Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 03:25:02 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 22
+
+---
+ client/src/Dashboard.jsx              | 13 ++++-
+ client/src/components/DaySchedule.jsx | 76 ---------------------------
+ client/src/components/DayView.jsx     | 56 ++++++++++++++++++++
+ client/src/components/Schedule.jsx    | 40 ++++++++++++++
+ client/src/components/WeekView.jsx    | 63 ++++++++++++++++++++++
+ client/src/lib/dates.js               | 33 ++++++++++++
+ client/src/styles.css                 | 25 +++++++++
+ 7 files changed, 228 insertions(+), 78 deletions(-)
+ delete mode 100644 client/src/components/DaySchedule.jsx
+ create mode 100644 client/src/components/DayView.jsx
+ create mode 100644 client/src/components/Schedule.jsx
+ create mode 100644 client/src/components/WeekView.jsx
+
+diff --git a/client/src/Dashboard.jsx b/client/src/Dashboard.jsx
+index 4c2137c..3c06aa0 100644
+--- a/client/src/Dashboard.jsx
++++ b/client/src/Dashboard.jsx
+@@ -5,7 +5,7 @@ import Header from './components/Header.jsx'
+ import Icon from './components/Icon.jsx'
+ import Modal from './components/Modal.jsx'
+ import StatCards from './components/StatCards.jsx'
+-import DaySchedule from './components/DaySchedule.jsx'
++import Schedule from './components/Schedule.jsx'
+ import AppointmentList from './components/AppointmentList.jsx'
+ import AppointmentForm from './components/AppointmentForm.jsx'
+ 
+@@ -17,6 +17,9 @@ export default function Dashboard({ user, onLogout, onExpired }) {
+   const [appointments, setAppointments] = useState([])
+   const [config, setConfig] = useState(DEFAULT_CONFIG)
+   const [date, setDate] = useState(todayStr())
++  const [view, setView] = useState(() => {
++    try { return localStorage.getItem('view') || 'day' } catch { return 'day' }
++  })
+   const [day, setDay] = useState(null)
+   const [today, setToday] = useState(null)
+   const [form, setForm] = useState({ open: false, key: 0, initial: {} })
+@@ -40,6 +43,11 @@ export default function Dashboard({ user, onLogout, onExpired }) {
+     api.day(todayStr(), '&after=' + nowRoundedUp()).then(setToday).catch(fail)
+   }, [date, appointments])
+ 
++  const changeView = (v) => {
++    setView(v)
++    try { localStorage.setItem('view', v) } catch { /* storage can be blocked */ }
++  }
++
+   const openForm = (initial = {}) => {
+     setFormError(''); setSuggestion('')
+     setForm((f) => ({ open: true, key: f.key + 1, initial: initial.id ? initial : { date, ...initial } }))
+@@ -110,7 +118,8 @@ export default function Dashboard({ user, onLogout, onExpired }) {
+           onBook={(start) => openForm({ date: todayStr(), start })} onEdit={openForm} />
+ 
+         <section className="card">
+-          <DaySchedule date={date} day={day} onDate={setDate}
++          <Schedule view={view} onView={changeView} date={date} onDate={setDate} day={day}
++            appointments={appointments} config={config}
+             onBook={(d, start) => openForm({ date: d, start })} onEdit={openForm} />
+         </section>
+ 
+diff --git a/client/src/components/DaySchedule.jsx b/client/src/components/DaySchedule.jsx
+deleted file mode 100644
+index ece71d2..0000000
+--- a/client/src/components/DaySchedule.jsx
++++ /dev/null
+@@ -1,76 +0,0 @@
+-import Icon from './Icon.jsx'
+-import { addDays, longDate, minToStr, to12h, todayStr } from '../lib/dates.js'
+-import { typeColor } from '../lib/types.js'
+-import { useNow } from '../lib/useNow.js'
+-
+-const SLOT = 30  // minutes per clickable row
+-const PX = 1.4   // pixels per minute
+-
+-export default function DaySchedule({ date, day, onDate, onBook, onEdit }) {
+-  const isToday = date === todayStr()
+-  const now = useNow()
+-  const live = day ? day.appointments.filter((a) => a.status !== 'cancelled') : []
+-  const hidden = day ? day.appointments.length - live.length : 0
+-  const pct = day ? Math.round((day.bookedMinutes / day.totalMinutes) * 100) : 0
+-  const level = pct >= 90 ? 'hot' : pct >= 70 ? 'warm' : ''
+-  const rows = day ? (day.workEnd - day.workStart) / SLOT : 0
+-
+-  return (
+-    <>
+-      <div className="card-head">
+-        <div className="daynav">
+-          <button type="button" className="iconbtn" onClick={() => onDate(addDays(date, -1))} aria-label="Previous day">
+-            <Icon name="chevL" />
+-          </button>
+-          <h2>{longDate(date)}</h2>
+-          <button type="button" className="iconbtn" onClick={() => onDate(addDays(date, 1))} aria-label="Next day">
+-            <Icon name="chevR" />
+-          </button>
+-          <button type="button" className="btn" onClick={() => onDate(todayStr())} disabled={isToday}>Today</button>
+-          <input type="date" className="datepick" value={date} aria-label="Pick a date"
+-            onChange={(e) => e.target.value && onDate(e.target.value)} />
+-        </div>
+-      </div>
+-
+-      {day ? (
+-        <>
+-          <div className="daymeta">
+-            <span>{live.length} {live.length === 1 ? 'appointment' : 'appointments'}</span>
+-            <div className={'bar ' + level}><i style={{ width: pct + '%' }} /></div>
+-            <span>{pct}% booked{hidden > 0 ? `, ${hidden} cancelled hidden` : ''}</span>
+-          </div>
+-
+-          <div className="timeline" style={{ height: rows * SLOT * PX }}>
+-            {Array.from({ length: rows }, (_, i) => {
+-              const start = day.workStart + i * SLOT
+-              const label = to12h(minToStr(start))
+-              return (
+-                <button key={start} type="button" className={'slot' + (i % 2 === 0 ? ' hour' : '')}
+-                  style={{ top: i * SLOT * PX, height: SLOT * PX }}
+-                  onClick={() => onBook(date, minToStr(start))} aria-label={`Book ${label}`}>
+-                  <span className="slot-time">{i % 2 === 0 ? label : ''}</span>
+-                  <span className="slot-add"><Icon name="plus" size={16} /></span>
+-                </button>
+-              )
+-            })}
+-
+-            {live.map((a) => (
+-              <button key={a.id} type="button" className={`appt ${a.status}${a.duration <= 15 ? ' short' : ''}`}
+-                style={{ top: (a.startMin - day.workStart) * PX, height: a.duration * PX - 2, '--c': typeColor(a.type) }}
+-                onClick={() => onEdit(a)} aria-label={`Edit ${a.title}, ${to12h(a.start)}`}>
+-                <b>{a.status === 'completed' && <Icon name="check" size={13} />} {a.title}</b>
+-                <span>{to12h(a.start)} - {to12h(a.end)} with {a.client}</span>
+-              </button>
+-            ))}
+-
+-            {isToday && now >= day.workStart && now <= day.workEnd && (
+-              <div className="nowline" style={{ top: (now - day.workStart) * PX }} aria-hidden="true"><i /></div>
+-            )}
+-          </div>
+-        </>
+-      ) : (
+-        <div className="skeleton" style={{ height: 360 }} aria-label="Loading schedule" />
+-      )}
+-    </>
+-  )
+-}
+diff --git a/client/src/components/DayView.jsx b/client/src/components/DayView.jsx
+new file mode 100644
+index 0000000..803c083
+--- /dev/null
++++ b/client/src/components/DayView.jsx
+@@ -0,0 +1,56 @@
++import Icon from './Icon.jsx'
++import { minToStr, to12h, todayStr } from '../lib/dates.js'
++import { typeColor } from '../lib/types.js'
++import { useNow } from '../lib/useNow.js'
++
++const SLOT = 30  // minutes per clickable row
++const PX = 1.4   // pixels per minute
++
++export default function DayView({ date, day, onBook, onEdit }) {
++  const now = useNow()
++  // while the next day is loading, show a skeleton instead of the previous day's data
++  if (!day || day.date !== date) return <div className="skeleton" style={{ height: 360 }} aria-label="Loading schedule" />
++
++  const live = day.appointments.filter((a) => a.status !== 'cancelled')
++  const hidden = day.appointments.length - live.length
++  const pct = Math.round((day.bookedMinutes / day.totalMinutes) * 100)
++  const level = pct >= 90 ? 'hot' : pct >= 70 ? 'warm' : ''
++  const rows = (day.workEnd - day.workStart) / SLOT
++  const showNow = date === todayStr() && now >= day.workStart && now <= day.workEnd
++
++  return (
++    <>
++      <div className="daymeta">
++        <span>{live.length} {live.length === 1 ? 'appointment' : 'appointments'}</span>
++        <div className={'bar ' + level}><i style={{ width: pct + '%' }} /></div>
++        <span>{pct}% booked{hidden > 0 ? `, ${hidden} cancelled hidden` : ''}</span>
++      </div>
++
++      <div className="timeline" style={{ height: rows * SLOT * PX }}>
++        {Array.from({ length: rows }, (_, i) => {
++          const start = day.workStart + i * SLOT
++          const label = to12h(minToStr(start))
++          return (
++            <button key={start} type="button" className={'slot' + (i % 2 === 0 ? ' hour' : '')}
++              style={{ top: i * SLOT * PX, height: SLOT * PX }}
++              onClick={() => onBook(date, minToStr(start))} aria-label={`Book ${label}`}>
++              <span className="slot-time">{i % 2 === 0 ? label : ''}</span>
++              <span className="slot-add"><Icon name="plus" size={16} /></span>
++            </button>
++          )
++        })}
++
++        {live.map((a) => (
++          <button key={a.id} type="button" className={`appt ${a.status}${a.duration <= 15 ? ' short' : ''}`}
++            style={{ top: (a.startMin - day.workStart) * PX, height: a.duration * PX - 2, '--c': typeColor(a.type) }}
++            onClick={() => onEdit(a)} aria-label={`Edit ${a.title}, ${to12h(a.start)}`}>
++            <b>{a.status === 'completed' && <Icon name="check" size={13} />} {a.title}</b>
++            <span>{to12h(a.start)} - {to12h(a.end)} with {a.client}</span>
++          </button>
++        ))}
++
++        {showNow && <div className="nowline" style={{ top: (now - day.workStart) * PX }} aria-hidden="true"><i /></div>}
++      </div>
++    </>
++  )
++}
+diff --git a/client/src/components/Schedule.jsx b/client/src/components/Schedule.jsx
+new file mode 100644
+index 0000000..5e7efb4
+--- /dev/null
++++ b/client/src/components/Schedule.jsx
+@@ -0,0 +1,40 @@
++import Icon from './Icon.jsx'
++import DayView from './DayView.jsx'
++import WeekView from './WeekView.jsx'
++import { periodLabel, shiftDate, todayStr } from '../lib/dates.js'
++
++const VIEWS = [['day', 'Day'], ['week', 'Week']]
++
++export default function Schedule({ view, onView, date, onDate, day, appointments, config, onBook, onEdit }) {
++  const pickDay = (d) => { onDate(d); onView('day') }
++
++  return (
++    <>
++      <div className="card-head">
++        <div className="daynav">
++          <button type="button" className="iconbtn" onClick={() => onDate(shiftDate(date, view, -1))} aria-label={`Previous ${view}`}>
++            <Icon name="chevL" />
++          </button>
++          <h2>{periodLabel(date, view)}</h2>
++          <button type="button" className="iconbtn" onClick={() => onDate(shiftDate(date, view, 1))} aria-label={`Next ${view}`}>
++            <Icon name="chevR" />
++          </button>
++          <button type="button" className="btn" onClick={() => onDate(todayStr())} disabled={date === todayStr()}>Today</button>
++          <input type="date" className="datepick" value={date} aria-label="Pick a date"
++            onChange={(e) => e.target.value && onDate(e.target.value)} />
++        </div>
++        <div className="seg" role="tablist" aria-label="Calendar view">
++          {VIEWS.map(([key, label]) => (
++            <button key={key} type="button" role="tab" aria-selected={view === key}
++              className={view === key ? 'on' : ''} onClick={() => onView(key)}>{label}</button>
++          ))}
++        </div>
++      </div>
++
++      {view === 'day' && <DayView date={date} day={day} onBook={onBook} onEdit={onEdit} />}
++      {view === 'week' && (
++        <WeekView date={date} appointments={appointments} config={config} onBook={onBook} onEdit={onEdit} onPickDay={pickDay} />
++      )}
++    </>
++  )
++}
+diff --git a/client/src/components/WeekView.jsx b/client/src/components/WeekView.jsx
+new file mode 100644
+index 0000000..d097fd3
+--- /dev/null
++++ b/client/src/components/WeekView.jsx
+@@ -0,0 +1,63 @@
++import { dayName, dayNum, longDate, minToStr, shortDate, to12h, todayStr, weekDays } from '../lib/dates.js'
++import { typeColor } from '../lib/types.js'
++import { useNow } from '../lib/useNow.js'
++
++const SLOT = 30
++const PX = 1.4
++
++export default function WeekView({ date, appointments, config, onBook, onEdit, onPickDay }) {
++  const now = useNow()
++  const days = weekDays(date)
++  const today = todayStr()
++  const start = config.workStart, end = config.workEnd
++  const rows = (end - start) / SLOT
++
++  return (
++    <div className="scroll">
++      <div className="week">
++        <div className="wgrid whead">
++          <div />
++          {days.map((d) => (
++            <button key={d} type="button" className={'whd' + (d === today ? ' today' : '')}
++              onClick={() => onPickDay(d)} aria-label={`Open ${longDate(d)}`}>
++              <span>{dayName(d)}</span><b>{dayNum(d)}</b>
++            </button>
++          ))}
++        </div>
++
++        <div className="wgrid wbody" style={{ height: rows * SLOT * PX }}>
++          <div className="waxis">
++            {Array.from({ length: rows / 2 }, (_, i) => (
++              <span key={i} style={{ top: i * 60 * PX }}>{to12h(minToStr(start + i * 60))}</span>
++            ))}
++          </div>
++
++          {days.map((d) => (
++            <div key={d} className={'wcol' + (d === today ? ' today' : '')}>
++              {Array.from({ length: rows }, (_, i) => {
++                const s = start + i * SLOT
++                return (
++                  <button key={s} type="button" className={'slot' + (i % 2 === 0 ? ' hour' : '')}
++                    style={{ top: i * SLOT * PX, height: SLOT * PX }}
++                    onClick={() => onBook(d, minToStr(s))} aria-label={`Book ${shortDate(d)}, ${to12h(minToStr(s))}`} />
++                )
++              })}
++
++              {appointments.filter((a) => a.date === d && a.status !== 'cancelled').map((a) => (
++                <button key={a.id} type="button" className={'wappt ' + a.status}
++                  style={{ top: (a.startMin - start) * PX, height: a.duration * PX - 2, '--c': typeColor(a.type) }}
++                  onClick={() => onEdit(a)} aria-label={`Edit ${a.title}, ${shortDate(a.date)} ${to12h(a.start)}`}>
++                  <b>{a.title}</b><span>{to12h(a.start)}</span>
++                </button>
++              ))}
++
++              {d === today && now >= start && now <= end && (
++                <div className="nowline" style={{ top: (now - start) * PX }} aria-hidden="true"><i style={{ left: -4 }} /></div>
++              )}
++            </div>
++          ))}
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/client/src/lib/dates.js b/client/src/lib/dates.js
+index 0cfeeb6..78578f0 100644
+--- a/client/src/lib/dates.js
++++ b/client/src/lib/dates.js
+@@ -33,3 +33,36 @@ export function nowRoundedUp() {
+   const m = Math.ceil((d.getHours() * 60 + d.getMinutes()) / 15) * 15
+   return minToStr(Math.min(m, 23 * 60 + 45))
+ }
++
++// ---------- calendar helpers (weeks start on Monday) ----------
++export function startOfWeek(str) {
++  const d = parse(str)
++  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
++  return toDateStr(d)
++}
++export const weekDays = (str) => Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(str), i))
++
++export function addMonths(str, n) {
++  const [y, m, d] = str.split('-').map(Number)
++  const last = new Date(y, m - 1 + n + 1, 0).getDate()
++  return toDateStr(new Date(y, m - 1 + n, Math.min(d, last)))
++}
++// 42 days (6 weeks) starting on the Monday on or before the 1st of the month
++export const monthGrid = (str) => Array.from({ length: 42 }, (_, i) => addDays(startOfWeek(str.slice(0, 8) + '01'), i))
++
++export const shiftDate = (str, view, dir) =>
++  view === 'month' ? addMonths(str, dir) : addDays(str, (view === 'week' ? 7 : 1) * dir)
++
++export const dayName = (str) => parse(str).toLocaleDateString('en-US', { weekday: 'short' })
++export const dayNum = (str) => Number(str.slice(8))
++
++export function periodLabel(str, view) {
++  if (view === 'month') return parse(str).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
++  if (view === 'week') {
++    const days = weekDays(str)
++    const a = parse(days[0]), b = parse(days[6])
++    const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
++    return `${fmt(a)} - ${a.getMonth() === b.getMonth() ? b.getDate() : fmt(b)}, ${b.getFullYear()}`
++  }
++  return longDate(str)
++}
+diff --git a/client/src/styles.css b/client/src/styles.css
+index b531d93..b10bade 100644
+--- a/client/src/styles.css
++++ b/client/src/styles.css
+@@ -197,3 +197,28 @@ tr.is-cancelled .title { text-decoration: line-through; color: var(--mute); }
+ .nowline i { position: absolute; left: 64px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--err); }
+ .skeleton { border-radius: 12px; background: linear-gradient(90deg, var(--surface2), var(--line), var(--surface2)); background-size: 200% 100%; animation: shimmer 1.3s infinite linear; }
+ @keyframes shimmer { to { background-position: -200% 0; } }
++
++/* ---------- view switcher and week view ---------- */
++.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface2); border: 1px solid var(--line); border-radius: 11px; }
++.seg button { padding: 6px 14px; font-weight: 600; font-size: .86rem; color: var(--mute); background: none; border: 0; border-radius: 8px; cursor: pointer; }
++.seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
++.week { min-width: 760px; }
++.wgrid { display: grid; grid-template-columns: 56px repeat(7, minmax(0, 1fr)); }
++.whd { background: none; border: 0; padding: 6px 0 8px; text-align: center; cursor: pointer; border-radius: 10px; }
++.whd:hover { background: var(--surface2); }
++.whd span { display: block; color: var(--mute); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
++.whd b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-size: 1rem; }
++.whd.today b { background: var(--brand); color: var(--brand-ink); }
++.wbody { border-top: 1px solid var(--line2); border-bottom: 1px solid var(--line); }
++.waxis { position: relative; }
++.waxis span { position: absolute; right: 8px; transform: translateY(-50%); color: var(--mute); font-size: .72rem; background: var(--surface); padding: 0 2px; }
++.waxis span:first-child { transform: none; }
++.wcol { position: relative; border-left: 1px solid var(--line); }
++.wcol.today { background: color-mix(in srgb, var(--brand) 5%, transparent); }
++.wcol .slot { padding: 0; }
++.wcol .slot:hover { background: color-mix(in srgb, var(--brand) 12%, transparent); }
++.wappt { --c: var(--brand); position: absolute; left: 3px; right: 3px; z-index: 2; text-align: left; padding: 2px 6px; overflow: hidden; cursor: pointer;
++  border-radius: 7px; font-size: .74rem; line-height: 1.3; color: var(--ink);
++  background: color-mix(in srgb, var(--c) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-left: 3px solid var(--c); }
++.wappt b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++.wappt span { color: var(--mute); }
+-- 
+2.43.0
+

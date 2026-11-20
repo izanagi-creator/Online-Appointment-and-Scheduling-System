@@ -1,0 +1,82 @@
+From 699fc58fed37d11cfde57a4cf53858ad4117258c Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 03:25:02 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 21
+
+---
+ client/src/components/DaySchedule.jsx |  8 +++++++-
+ client/src/lib/useNow.js              | 12 ++++++++++++
+ client/src/styles.css                 |  6 ++++++
+ 3 files changed, 25 insertions(+), 1 deletion(-)
+ create mode 100644 client/src/lib/useNow.js
+
+diff --git a/client/src/components/DaySchedule.jsx b/client/src/components/DaySchedule.jsx
+index 0505753..ece71d2 100644
+--- a/client/src/components/DaySchedule.jsx
++++ b/client/src/components/DaySchedule.jsx
+@@ -1,12 +1,14 @@
+ import Icon from './Icon.jsx'
+ import { addDays, longDate, minToStr, to12h, todayStr } from '../lib/dates.js'
+ import { typeColor } from '../lib/types.js'
++import { useNow } from '../lib/useNow.js'
+ 
+ const SLOT = 30  // minutes per clickable row
+ const PX = 1.4   // pixels per minute
+ 
+ export default function DaySchedule({ date, day, onDate, onBook, onEdit }) {
+   const isToday = date === todayStr()
++  const now = useNow()
+   const live = day ? day.appointments.filter((a) => a.status !== 'cancelled') : []
+   const hidden = day ? day.appointments.length - live.length : 0
+   const pct = day ? Math.round((day.bookedMinutes / day.totalMinutes) * 100) : 0
+@@ -60,10 +62,14 @@ export default function DaySchedule({ date, day, onDate, onBook, onEdit }) {
+                 <span>{to12h(a.start)} - {to12h(a.end)} with {a.client}</span>
+               </button>
+             ))}
++
++            {isToday && now >= day.workStart && now <= day.workEnd && (
++              <div className="nowline" style={{ top: (now - day.workStart) * PX }} aria-hidden="true"><i /></div>
++            )}
+           </div>
+         </>
+       ) : (
+-        <p className="empty">Loading schedule...</p>
++        <div className="skeleton" style={{ height: 360 }} aria-label="Loading schedule" />
+       )}
+     </>
+   )
+diff --git a/client/src/lib/useNow.js b/client/src/lib/useNow.js
+new file mode 100644
+index 0000000..656e4cd
+--- /dev/null
++++ b/client/src/lib/useNow.js
+@@ -0,0 +1,12 @@
++import { useEffect, useState } from 'react'
++
++// The current time as minutes since midnight, refreshed every 30 seconds.
++export function useNow() {
++  const get = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() }
++  const [now, setNow] = useState(get)
++  useEffect(() => {
++    const id = setInterval(() => setNow(get()), 30000)
++    return () => clearInterval(id)
++  }, [])
++  return now
++}
+diff --git a/client/src/styles.css b/client/src/styles.css
+index 8e68017..b531d93 100644
+--- a/client/src/styles.css
++++ b/client/src/styles.css
+@@ -191,3 +191,9 @@ tr.is-cancelled .title { text-decoration: line-through; color: var(--mute); }
+   td.rowbtns { justify-content: flex-end; }
+ }
+ @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
++
++/* ---------- now line and loading skeleton ---------- */
++.nowline { position: absolute; left: 0; right: 0; z-index: 3; height: 2px; background: var(--err); pointer-events: none; }
++.nowline i { position: absolute; left: 64px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--err); }
++.skeleton { border-radius: 12px; background: linear-gradient(90deg, var(--surface2), var(--line), var(--surface2)); background-size: 200% 100%; animation: shimmer 1.3s infinite linear; }
++@keyframes shimmer { to { background-position: -200% 0; } }
+-- 
+2.43.0
+

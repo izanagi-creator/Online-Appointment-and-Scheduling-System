@@ -1,0 +1,104 @@
+From aaaf165878e8988e7b42a7d6316915472b8e2887 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 03:25:01 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 20
+
+---
+ client/src/components/AppointmentList.jsx |  5 ++++-
+ client/src/components/DaySchedule.jsx     |  5 +++--
+ client/src/lib/types.js                   | 10 ++++++++++
+ client/src/styles.css                     | 12 ++++++++----
+ 4 files changed, 25 insertions(+), 7 deletions(-)
+ create mode 100644 client/src/lib/types.js
+
+diff --git a/client/src/components/AppointmentList.jsx b/client/src/components/AppointmentList.jsx
+index 954a279..c185f07 100644
+--- a/client/src/components/AppointmentList.jsx
++++ b/client/src/components/AppointmentList.jsx
+@@ -1,6 +1,7 @@
+ import { useEffect, useMemo, useRef, useState } from 'react'
+ import Icon from './Icon.jsx'
+ import { shortDate, to12h } from '../lib/dates.js'
++import { typeColor } from '../lib/types.js'
+ 
+ const COLUMNS = [['when', 'When'], ['title', 'Title'], ['client', 'Client'], ['type', 'Type'], ['status', 'Status']]
+ 
+@@ -102,7 +103,9 @@ export default function AppointmentList({ appointments, onAdd, onEdit, onDelete,
+                   </td>
+                   <td data-label="Title"><b className="title">{a.title}</b></td>
+                   <td data-label="Client">{a.client}</td>
+-                  <td data-label="Type">{a.type}</td>
++                  <td data-label="Type">
++                    <span className="typecell"><i className="typedot" style={{ '--c': typeColor(a.type) }} />{a.type}</span>
++                  </td>
+                   <td data-label="Status"><span className={'badge ' + a.status}>{a.status}</span></td>
+                   <td className="rowbtns">
+                     <div className="rowbtn-wrap">
+diff --git a/client/src/components/DaySchedule.jsx b/client/src/components/DaySchedule.jsx
+index 9c1210e..0505753 100644
+--- a/client/src/components/DaySchedule.jsx
++++ b/client/src/components/DaySchedule.jsx
+@@ -1,5 +1,6 @@
+ import Icon from './Icon.jsx'
+ import { addDays, longDate, minToStr, to12h, todayStr } from '../lib/dates.js'
++import { typeColor } from '../lib/types.js'
+ 
+ const SLOT = 30  // minutes per clickable row
+ const PX = 1.4   // pixels per minute
+@@ -53,9 +54,9 @@ export default function DaySchedule({ date, day, onDate, onBook, onEdit }) {
+ 
+             {live.map((a) => (
+               <button key={a.id} type="button" className={`appt ${a.status}${a.duration <= 15 ? ' short' : ''}`}
+-                style={{ top: (a.startMin - day.workStart) * PX, height: a.duration * PX - 2 }}
++                style={{ top: (a.startMin - day.workStart) * PX, height: a.duration * PX - 2, '--c': typeColor(a.type) }}
+                 onClick={() => onEdit(a)} aria-label={`Edit ${a.title}, ${to12h(a.start)}`}>
+-                <b>{a.title}</b>
++                <b>{a.status === 'completed' && <Icon name="check" size={13} />} {a.title}</b>
+                 <span>{to12h(a.start)} - {to12h(a.end)} with {a.client}</span>
+               </button>
+             ))}
+diff --git a/client/src/lib/types.js b/client/src/lib/types.js
+new file mode 100644
+index 0000000..fb4dea1
+--- /dev/null
++++ b/client/src/lib/types.js
+@@ -0,0 +1,10 @@
++// Each appointment type has its own colour, used on the timeline, the calendar views and the list.
++export const TYPE_COLORS = {
++  Consultation: '#4f46e5',
++  Meeting: '#0e7490',
++  'Check-up': '#15803d',
++  Class: '#b45309',
++  Interview: '#be185d',
++  Other: '#64748b',
++}
++export const typeColor = (type) => TYPE_COLORS[type] || TYPE_COLORS.Other
+diff --git a/client/src/styles.css b/client/src/styles.css
+index e099e78..8e68017 100644
+--- a/client/src/styles.css
++++ b/client/src/styles.css
+@@ -95,13 +95,17 @@ input:focus, select:focus { border-color: var(--brand); outline: 3px solid color
+ .slot-time { width: 72px; flex: none; color: var(--mute); font-size: .76rem; }
+ .slot-add { margin-left: auto; opacity: 0; color: var(--brand); }
+ .slot:hover .slot-add { opacity: 1; }
+-.appt { position: absolute; left: 92px; right: 8px; z-index: 2; display: flex; flex-direction: column; justify-content: center;
+-  text-align: left; padding: 3px 10px; border-radius: 9px; cursor: pointer; overflow: hidden;
+-  color: var(--ink); background: var(--brand-soft); border: 1px solid var(--brand); border-left-width: 4px; }
++.appt { --c: var(--brand); position: absolute; left: 92px; right: 8px; z-index: 2; display: flex; flex-direction: column; justify-content: center;
++  text-align: left; padding: 3px 10px; border-radius: 9px; cursor: pointer; overflow: hidden; color: var(--ink);
++  background: color-mix(in srgb, var(--c) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
++  border-left: 4px solid var(--c); transition: transform .1s, box-shadow .1s; }
++.appt:hover { transform: translateX(2px); box-shadow: var(--shadow); }
+ .appt b { font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ .appt span { font-size: .78rem; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+ .appt.short span { display: none; }
+-.appt.completed { background: var(--ok-soft); border-color: var(--ok); }
++.appt.completed, .wappt.completed, .mchip.completed { opacity: .68; }
++.typecell { display: inline-flex; align-items: center; gap: 8px; }
++.typedot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
+ 
+ /* ---------- appointment list ---------- */
+ .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+-- 
+2.43.0
+
