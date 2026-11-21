@@ -1,0 +1,125 @@
+From 25369d35778f0679766f7d6c4602ed53ebcd23d4 Mon Sep 17 00:00:00 2001
+From: Student <student@example.com>
+Date: Wed, 11 Nov 2026 03:25:52 +0000
+Subject: [PATCH] Online Appointment and Scheduling System update 23
+
+---
+ client/src/components/MonthView.jsx | 48 +++++++++++++++++++++++++++++
+ client/src/components/Schedule.jsx  |  6 +++-
+ client/src/styles.css               | 22 +++++++++++++
+ 3 files changed, 75 insertions(+), 1 deletion(-)
+ create mode 100644 client/src/components/MonthView.jsx
+
+diff --git a/client/src/components/MonthView.jsx b/client/src/components/MonthView.jsx
+new file mode 100644
+index 0000000..7664374
+--- /dev/null
++++ b/client/src/components/MonthView.jsx
+@@ -0,0 +1,48 @@
++import Icon from './Icon.jsx'
++import { dayName, dayNum, longDate, monthGrid, shortDate, to12h, todayStr } from '../lib/dates.js'
++import { typeColor } from '../lib/types.js'
++
++const MAX = 3 // chips shown per day before "+N more"
++
++export default function MonthView({ date, appointments, onBook, onEdit, onPickDay }) {
++  const days = monthGrid(date)
++  const month = date.slice(0, 7)
++  const today = todayStr()
++
++  const byDate = {}
++  for (const a of appointments) {
++    if (a.status !== 'cancelled') (byDate[a.date] ||= []).push(a)
++  }
++
++  return (
++    <div className="scroll">
++      <div className="month">
++        <div className="mhead">{days.slice(0, 7).map((d) => <span key={d}>{dayName(d)}</span>)}</div>
++        <div className="mgrid">
++          {days.map((d) => {
++            const list = byDate[d] || []
++            return (
++              <div key={d} className={'mcell' + (d.slice(0, 7) !== month ? ' other' : '') + (d === today ? ' today' : '')}>
++                <div className="mtop">
++                  <button type="button" className="mnum" onClick={() => onPickDay(d)} aria-label={`Open ${longDate(d)}`}>{dayNum(d)}</button>
++                  <button type="button" className="madd" onClick={() => onBook(d, '09:00')} aria-label={`New appointment on ${shortDate(d)}`}>
++                    <Icon name="plus" size={14} />
++                  </button>
++                </div>
++                {list.slice(0, MAX).map((a) => (
++                  <button key={a.id} type="button" className={'mchip ' + a.status} style={{ '--c': typeColor(a.type) }}
++                    onClick={() => onEdit(a)} title={`${to12h(a.start)} ${a.title}`}>
++                    <span className="mtime">{to12h(a.start).replace(':00', '')}</span> {a.title}
++                  </button>
++                ))}
++                {list.length > MAX && (
++                  <button type="button" className="mmore" onClick={() => onPickDay(d)}>+{list.length - MAX} more</button>
++                )}
++              </div>
++            )
++          })}
++        </div>
++      </div>
++    </div>
++  )
++}
+diff --git a/client/src/components/Schedule.jsx b/client/src/components/Schedule.jsx
+index 5e7efb4..f0b9b96 100644
+--- a/client/src/components/Schedule.jsx
++++ b/client/src/components/Schedule.jsx
+@@ -1,9 +1,10 @@
+ import Icon from './Icon.jsx'
+ import DayView from './DayView.jsx'
+ import WeekView from './WeekView.jsx'
++import MonthView from './MonthView.jsx'
+ import { periodLabel, shiftDate, todayStr } from '../lib/dates.js'
+ 
+-const VIEWS = [['day', 'Day'], ['week', 'Week']]
++const VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month']]
+ 
+ export default function Schedule({ view, onView, date, onDate, day, appointments, config, onBook, onEdit }) {
+   const pickDay = (d) => { onDate(d); onView('day') }
+@@ -35,6 +36,9 @@ export default function Schedule({ view, onView, date, onDate, day, appointments
+       {view === 'week' && (
+         <WeekView date={date} appointments={appointments} config={config} onBook={onBook} onEdit={onEdit} onPickDay={pickDay} />
+       )}
++      {view === 'month' && (
++        <MonthView date={date} appointments={appointments} onBook={onBook} onEdit={onEdit} onPickDay={pickDay} />
++      )}
+     </>
+   )
+ }
+diff --git a/client/src/styles.css b/client/src/styles.css
+index b10bade..25a0407 100644
+--- a/client/src/styles.css
++++ b/client/src/styles.css
+@@ -222,3 +222,25 @@ tr.is-cancelled .title { text-decoration: line-through; color: var(--mute); }
+   background: color-mix(in srgb, var(--c) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-left: 3px solid var(--c); }
+ .wappt b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .wappt span { color: var(--mute); }
++
++/* ---------- month view ---------- */
++.month { min-width: 680px; }
++.mhead { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding-bottom: 6px; }
++.mhead span { text-align: center; color: var(--mute); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
++.mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
++.mcell { min-height: 108px; padding: 4px 5px 6px; display: flex; flex-direction: column; gap: 2px; min-width: 0;
++  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
++.mcell.other { background: var(--surface2); }
++.mcell.other .mnum { color: var(--mute); opacity: .6; }
++.mcell.today { background: color-mix(in srgb, var(--brand) 7%, transparent); }
++.mtop { display: flex; justify-content: space-between; align-items: center; }
++.mnum { width: 26px; height: 26px; display: inline-grid; place-items: center; border-radius: 50%; border: 0; background: none; cursor: pointer; font-size: .84rem; font-weight: 600; }
++.mnum:hover { background: var(--surface2); }
++.mcell.today .mnum { background: var(--brand); color: var(--brand-ink); }
++.madd { opacity: 0; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--brand); cursor: pointer; }
++.mcell:hover .madd, .madd:focus-visible { opacity: 1; }
++.mchip { --c: var(--brand); text-align: left; padding: 1px 6px; font-size: .74rem; line-height: 1.5; cursor: pointer; color: var(--ink);
++  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px; border: 0; border-left: 3px solid var(--c);
++  background: color-mix(in srgb, var(--c) 15%, var(--surface)); }
++.mtime { color: var(--mute); font-weight: 600; }
++.mmore { text-align: left; background: none; border: 0; padding: 0 4px; color: var(--brand); font-size: .74rem; font-weight: 600; cursor: pointer; }
+-- 
+2.43.0
+
